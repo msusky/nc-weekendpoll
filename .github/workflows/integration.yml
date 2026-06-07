@@ -1,0 +1,100 @@
+name: Integration
+
+# Spins up a real Nextcloud container, installs the Polls app, and runs the
+# integration tests in tests/test_integration.py against it. This closes the
+# gap that unit tests cannot cover: the actual OCS API round-trip.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    name: nextcloud ${{ matrix.nextcloud }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Nextcloud server versions supported by the targeted Polls release
+        # (Polls 9.1.1 -> Nextcloud 32-33, per its info.xml). Add/adjust
+        # versions here together with the Polls version under test.
+        nextcloud: ["32", "33"]
+    env:
+      NC_IMAGE: "nextcloud:${{ matrix.nextcloud }}-apache"
+      NC_ADMIN_USER: "admin"
+      NC_ADMIN_PASSWORD: "admin-int-test-pw"
+      NC_PORT: "8080"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package and test deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Start Nextcloud (SQLite, auto-provisioned admin)
+        run: |
+          docker run -d --name nextcloud \
+            -p ${NC_PORT}:80 \
+            -e SQLITE_DATABASE=nextcloud \
+            -e NEXTCLOUD_ADMIN_USER="${NC_ADMIN_USER}" \
+            -e NEXTCLOUD_ADMIN_PASSWORD="${NC_ADMIN_PASSWORD}" \
+            -e NEXTCLOUD_TRUSTED_DOMAINS="localhost 127.0.0.1" \
+            "${NC_IMAGE}"
+
+      - name: Wait until Nextcloud has finished installing
+        run: |
+          # The entrypoint runs the install on first boot; poll status.php
+          # until it reports installed=true (up to ~3 minutes).
+          for i in $(seq 1 60); do
+            body="$(curl -fsS "http://localhost:${NC_PORT}/status.php" || true)"
+            echo "attempt $i: $body"
+            if echo "$body" | grep -q '"installed":true'; then
+              echo "Nextcloud is up."
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "Nextcloud did not become ready in time." >&2
+          docker logs nextcloud || true
+          exit 1
+
+      - name: Install and enable the Polls app
+        run: |
+          occ() { docker exec --user www-data nextcloud php occ "$@"; }
+          # Install the Polls app from the app store (latest compatible release).
+          occ app:install polls
+          occ app:enable polls
+          echo "Installed Polls version:"
+          occ app:list | grep -A1 -i polls || true
+
+      - name: Create an app password for the integration user
+        id: apppw
+        run: |
+          # Generates a dedicated app password via the OCS provisioning API,
+          # so the tests never use the raw admin password for the API calls.
+          resp="$(curl -fsS -X GET \
+            -u "${NC_ADMIN_USER}:${NC_ADMIN_PASSWORD}" \
+            -H 'OCS-APIRequest: true' \
+            -H 'Accept: application/json' \
+            "http://localhost:${NC_PORT}/ocs/v2.php/core/getapppassword")"
+          token="$(printf '%s' "$resp" | python3 -c 'import sys,json; print(json.load(sys.stdin)["ocs"]["data"]["apppassword"])')"
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Run integration tests
+        env:
+          WEEKENDPOLL_IT_URL: "http://localhost:${{ env.NC_PORT }}"
+          WEEKENDPOLL_IT_USER: ${{ env.NC_ADMIN_USER }}
+          WEEKENDPOLL_IT_PASSWORD: ${{ steps.apppw.outputs.token }}
+        run: pytest tests/test_integration.py -v
+
+      - name: Nextcloud logs on failure
+        if: failure()
+        run: docker logs nextcloud || true
