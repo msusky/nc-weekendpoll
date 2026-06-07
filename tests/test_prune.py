@@ -35,3 +35,11 @@ def test_format_row_contains_id_and_title():
     assert "3" in row
     assert "Test poll" in row
     assert "you" in row
+
+
+def test_format_row_missing_fields():
+    # When fields are missing from the list response, show defaults
+    row = _format_poll_row({"id": 5}, None)
+    assert "[   5]" in row
+    assert "?" in row  # age is missing
+    assert "(untitled)" in row  # title is missing

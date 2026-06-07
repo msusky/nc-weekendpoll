@@ -10,7 +10,7 @@ build-backend = "hatchling.build"
 # use) in the description, keywords and README. The import package and the CLI
 # command remain "weekendpoll".
 name = "nc-weekendpoll"
-version = "0.1.0"
+version = "0.1.1"
 description = "CLI to find a free weekend via the Polls app for Nextcloud (unofficial, not affiliated with Nextcloud GmbH)."
 readme = "README.md"
 requires-python = ">=3.10"

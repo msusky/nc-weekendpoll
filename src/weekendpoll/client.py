@@ -81,7 +81,16 @@ class PollsClient:
         resp = self._session.get(f"{self.api}/polls", timeout=self.timeout)
         self._check(resp, action="List polls")
         data = self._unwrap(resp) or {}
-        return data.get("polls", [])
+        polls = data.get("polls", [])
+        # Normalize poll data: extract title and created from their nested locations
+        for poll in polls:
+            # Title may be in configuration.title
+            if "title" not in poll and "configuration" in poll:
+                poll["title"] = poll["configuration"].get("title")
+            # Created timestamp is in status.created
+            if "created" not in poll and "status" in poll:
+                poll["created"] = poll["status"].get("created")
+        return polls
 
     def delete_poll(self, poll_id: int) -> None:
         resp = self._session.delete(f"{self.api}/poll/{poll_id}", timeout=self.timeout)

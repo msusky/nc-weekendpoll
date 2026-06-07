@@ -13,6 +13,14 @@ MINOR versions.
 
 _Nothing yet._
 
+## [0.1.1] - 2026-06-07
+
+### Fixed
+- `list` command now correctly displays poll titles and creation timestamps. The
+  Nextcloud Polls API returns these fields nested under `configuration.title` and
+  `status.created`; the command now extracts them to show meaningful information
+  instead of placeholders.
+
 ## [0.1.0] - 2026-06-07
 
 Initial release.
