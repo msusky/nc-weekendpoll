@@ -16,7 +16,7 @@ def test_api_base_uses_ocs():
 
 def test_pretty_urls_by_default():
     c = _client()
-    # matches the user's actual instance: no /index.php
+    # pretty URLs (default): no /index.php
     assert c.internal_url(3) == f"{BASE}/apps/polls/vote/3"
 
 

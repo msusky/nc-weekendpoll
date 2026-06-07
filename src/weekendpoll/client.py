@@ -74,7 +74,13 @@ class PollsClient:
             raise PollsError(f"Poll {poll_id} not found.")
         self._check(resp, action="Get poll")
         data = self._unwrap(resp) or {}
-        return data.get("poll", data)
+        # The API returns poll, options, votes, comments, shares at the top level
+        poll = data.get("poll", {})
+        # Merge options and other fields into the poll for easy access
+        for key in ("options", "votes", "comments", "shares", "subscribed"):
+            if key in data:
+                poll[key] = data[key]
+        return poll
 
     def list_polls(self) -> list[dict]:
         """Return all polls visible to the authenticated user."""
@@ -123,6 +129,13 @@ class PollsClient:
 
     def add_date_option(self, poll_id: int, timestamp: int, duration: int = 0) -> str:
         """Add one date option. Returns 'added' or 'exists'."""
+        # Check if this option already exists in the poll
+        poll = self.get_poll(poll_id)
+        options = poll.get("options", [])
+        if any(opt.get("timestamp") == timestamp and opt.get("duration") == duration
+               for opt in options):
+            return "exists"
+
         resp = self._session.post(
             f"{self.api}/poll/{poll_id}/option",
             json={"option": {"timestamp": timestamp, "duration": duration}},
